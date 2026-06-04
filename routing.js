@@ -157,6 +157,21 @@ function clearMap() {
     routeReady = false;
 }
 
+function calculateRouteAStar(start, end) {
+
+    const graph = {
+        nodes: {},
+        edges: {}
+    };
+
+    // Road network preprocessing
+
+    const path = findPathAStar(
+        graph,
+        "start",
+        "goal"
+    );
+
 
 // =========================
 // A* Pathfinding Algorithm
@@ -256,20 +271,6 @@ function findPathAStar(graph, startNodeId, goalNodeId) {
     return [];
 }
 
-function calculateRouteAStar(start, end) {
-
-    const graph = {
-        nodes: {},
-        edges: {}
-    };
-
-    // Road network preprocessing
-
-    const path = findPathAStar(
-        graph,
-        "start",
-        "goal"
-    );
 
     return path;
 }
