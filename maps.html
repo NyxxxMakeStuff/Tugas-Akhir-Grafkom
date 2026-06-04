@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simulasi Kendaraan + Control</title>
+    <link rel="icon" type="image/png" href="logo.png">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+    <div class="title">
+        <h2>Simulasi Navigasi Objek pada Peta Spasial Perkotaan Berbasis Interpolasi Koordinat dan Perhitungan Geospasial 2D</h2>
+        <p>Klik posisi di map (Start & Tujuan)</p>
+    </div>
+
+<button onclick="startSim()">▶ Start</button>
+<button onclick="pauseSim()">⏸ Pause</button>
+<button onclick="resetSim()">🔄 Reset</button>
+<button onclick="resetMarkers()">🧹 Reset Markers</button>
+<button onclick="randomMap()">🌍 Random Lokasi</button>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+
+<script>
+var map = L.map('map').setView([1.0456, 104.0305], 13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+var start = null;
+var end = null;
+var routeCoords = [];
+var carMarker = null;
+var i = 0;
+var interval = null;
+var routingControl = null;
+let routeReady = false;
+
+let startMarker = null;
+let endMarker = null;
+let routeVersion = 0;
+let passedLine = null;
+let remainingLine = null;
+
+map.on('click', function(e) {
+
+    if (!start) {
+        start = e.latlng;
+
+        startMarker = L.marker(start).addTo(map)
+            .bindPopup("Start")
+            .openPopup();
+
+        startMarker.on('click', function() {
+            // hapus marker
+            map.removeLayer(startMarker);
+            start = null;
+            startMarker = null;
+
+            pauseSim();
+
+  
+            if (passedLine) {
+                map.removeLayer(passedLine);
+                passedLine = null;
+            }
+
+            if (remainingLine) {
+                map.removeLayer(remainingLine);
+                remainingLine = null;
+            }
+
+            // hapus route
+            if (routingControl) {
+                map.removeControl(routingControl);
+                routingControl = null;
+            }
+
+            // hapus kendaraan
+            if (carMarker) {
+                map.removeLayer(carMarker);
+                carMarker = null;
+            }
+
+            routeCoords = [];
+            routeReady = false;
+        });
+    }
+
+    else if (!end) {
+        end = e.latlng;
+
+        endMarker = L.marker(end).addTo(map)
+            .bindPopup("Tujuan")
+            .openPopup();
+
+        endMarker.on('click', function() {
+            // hapus marker
+            map.removeLayer(endMarker);
+            end = null;
+            endMarker = null;
+
+            pauseSim();
+
+            
+            if (passedLine) {
+                map.removeLayer(passedLine);
+                passedLine = null;
+            }
+
+            if (remainingLine) {
+                map.removeLayer(remainingLine);
+                remainingLine = null;
+            }
+
+            // hapus route
+            if (routingControl) {
+                map.removeControl(routingControl);
+                routingControl = null;
+            }
+
+            // hapus kendaraan
+            if (carMarker) {
+                map.removeLayer(carMarker);
+                carMarker = null;
+            }
+
+            routeCoords = [];
+            routeReady = false;
+        });
+
+        buatRute();
+    }
+});
+
+function buatRute() {
+
+    routeReady = false;
+    routeVersion++; 
+    const currentVersion = routeVersion;
+
+    pauseSim();
+    i = 0;
+    routeCoords = [];
+
+    if (carMarker) {
+        map.removeLayer(carMarker);
+        carMarker = null;
+    }
+
+    if (routingControl) {
+        map.removeControl(routingControl);
+        routingControl = null;
+    }
+
+    routingControl = L.Routing.control({
+    waypoints: [
+        L.latLng(start.lat, start.lng),
+        L.latLng(end.lat, end.lng)
+    ],
+    router: L.Routing.osrmv1({
+        serviceUrl: 'https://router.project-osrm.org/route/v1'
+    }),
+    createMarker: function() { return null; },
+
+    lineOptions: {
+        styles: [] 
+    },
+
+
+    collapsible: true
+
+
+    }).addTo(map);
+
+    routingControl.on('routesfound', function(e) {
+
+        if (currentVersion !== routeVersion) return;
+
+        routeCoords = e.routes[0].coordinates;
+
+        // remove old lines
+        if (passedLine) map.removeLayer(passedLine);
+        if (remainingLine) map.removeLayer(remainingLine);
+
+        // full route (remaining)
+        remainingLine = L.polyline(routeCoords, {
+        color: 'red',
+        weight: 5
+        }).addTo(map);
+
+        // empty passed line
+        passedLine = L.polyline([], {
+        color: 'blue',
+        weight: 5,
+        dashArray: '10, 10' 
+    }).addTo(map);
+
+        progress = 0; 
+
+        // recreate marker clean
+        const carIcon = L.divIcon({
+    html: `
+<div style="
+    width:80px;
+    height:80px;
+    border:1px solid red;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    font-size:64px;
+">
+🚗
+</div>
+`,
+    className: '',
+    iconSize: [48, 48],
+    iconAnchor: [40, 30]
+    });
+    carMarker = L.marker(routeCoords[0], {
+    icon: carIcon
+    }).addTo(map);
+        
+        i = 0;
+        routeReady = true;
+    });
+}
+</script>
+
+<script>
+function randomMap() {
+
+    // stop simulasi
+    pauseSim();
+    i = 0;
+
+    // hapus marker start
+    if (startMarker) {
+        map.removeLayer(startMarker);
+        startMarker = null;
+        start = null;
+    }
+
+    // hapus marker end
+    if (endMarker) {
+        map.removeLayer(endMarker);
+        endMarker = null;
+        end = null;
+    }
+
+    // hapus garis
+    if (passedLine) {
+        map.removeLayer(passedLine);
+        passedLine = null;
+    }
+
+    if (remainingLine) {
+        map.removeLayer(remainingLine);
+        remainingLine = null;
+    }
+
+    // hapus route
+    if (routingControl) {
+        map.removeControl(routingControl);
+        routingControl = null;
+    }
+
+    // hapus kendaraan
+    if (carMarker) {
+        map.removeLayer(carMarker);
+        carMarker = null;
+    }
+
+    // reset data
+    routeCoords = [];
+    routeReady = false;
+
+
+    const locations = [
+        [-6.2088, 106.8456],
+        [-7.2575, 112.7521],
+        [-8.6705, 115.2126],
+        [1.3521, 103.8198],
+        [35.6895, 139.6917],
+        [51.5074, -0.1278],
+        [40.7128, -74.0060],
+        [48.8566, 2.3522],
+        [52.5200, 13.4050],
+        [-33.8688, 151.2093],
+        [34.0522, -118.2437],
+        [41.8781, -87.6298],
+        [37.7749, -122.4194],
+        [55.7558, 37.6173],
+        [19.0760, 72.8777],
+        [28.6139, 77.2090],
+        [-23.5505, -46.6333],
+        [31.2304, 121.4737],
+        [39.9042, 116.4074],
+        [13.7563, 100.5018]
+    ];
+
+    let randomIndex = Math.floor(Math.random() * locations.length);
+    let lat = locations[randomIndex][0];
+    let lng = locations[randomIndex][1];
+
+    map.setView([lat, lng], 14);
+}
+
+function resetMarkers() {
+    clearMap(); 
+}
+</script>
+
+<script src="routing.js"></script>
+
+</body>
+</html>
